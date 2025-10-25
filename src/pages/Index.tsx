@@ -34,6 +34,8 @@ export default function Index() {
   const [ammo, setAmmo] = useState(30);
   const [kills, setKills] = useState(0);
   const [enemies, setEnemies] = useState<{id: number, x: number, y: number, alive: boolean}[]>([]);
+  const [chatMessages, setChatMessages] = useState<{id: number, user: string, text: string, timestamp: Date}[]>([]);
+  const [chatInput, setChatInput] = useState('');
   const { toast } = useToast();
 
   useEffect(() => {
@@ -125,21 +127,37 @@ export default function Index() {
     setEnemies(newEnemies);
   };
 
+  const playSound = (type: 'shoot' | 'hit' | 'levelup') => {
+    const audio = new Audio();
+    if (type === 'shoot') {
+      audio.src = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVDw1Loo...';
+    } else if (type === 'hit') {
+      audio.src = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAiBMAAIgTAAABAAgAZGF0YQoGAAB/f39/f39/f39/f39/f39/f39/f39/f39/f39/f39/f39/f39/f39/f39/f39/f39/f39/f39/f39/f39/f39/f39/f39/f39/f39/f39/f39/f39/f39/f39/f39/...';
+    } else {
+      audio.src = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAiBMAAIgTAAABAAgAZGF0YQoGAACAgoSGiImKi4uLi4uKiomIh4aFhIOCgYB/fn18e3p5eHd2dXRzcnJxcXBwb29ubW1sbGtra2pqaWlpaGhoZ2dnZ2ZmZmVlZWVkZGRkY2NjY2JiYmJiYWFhYWFgYGBgYGBfX19fX19eXl5eXl5dXV1dXV1dXFxcXFxcXFtbW1tbW1tbWlpaWlpaWlpaWVlZWVlZWVlZWFhYWFhYWFhYWFdXV1dXV1dXV1dXVlZWVlZWVlZWVlZWVlVVVVVVVVVVVVVVVVVVVFRUVFRUVFRUVFRUVFRUVFNTU1NTU1NTU1NTU1NTU1NTUlJSUlJSUlJSUlJSUlJSUlJSUlJSUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/';
+    }
+    audio.volume = 0.3;
+    audio.play().catch(() => {});
+  };
+
   const shoot = (enemyId: number) => {
     if (ammo <= 0) {
       toast({ title: '🔫 Патроны закончились!', variant: 'destructive' });
       return;
     }
 
+    playSound('shoot');
     setAmmo(prev => prev - 1);
     setEnemies(prev => prev.map(enemy => 
       enemy.id === enemyId ? { ...enemy, alive: false } : enemy
     ));
     setKills(prev => prev + 1);
+    playSound('hit');
 
     const aliveCount = enemies.filter(e => e.alive).length - 1;
     if (aliveCount === 0) {
       setTimeout(() => {
+        playSound('levelup');
         toast({ title: '🏆 Уровень пройден!', description: `Убито врагов: ${kills + 1}` });
         if (currentUser) {
           const updatedUser = { ...currentUser, level: Math.max(currentUser.level, currentLevel + 1) };
@@ -156,6 +174,33 @@ export default function Index() {
     setCurrentUser(null);
     setGameState('auth');
   };
+
+  const sendMessage = () => {
+    if (!chatInput.trim()) return;
+    const newMessage = {
+      id: Date.now(),
+      user: currentUser?.nickname || 'Игрок',
+      text: chatInput,
+      timestamp: new Date()
+    };
+    const messages = JSON.parse(localStorage.getItem('chatMessages') || '[]');
+    messages.push(newMessage);
+    localStorage.setItem('chatMessages', JSON.stringify(messages));
+    setChatMessages(messages);
+    setChatInput('');
+  };
+
+  useEffect(() => {
+    if (gameState === 'multiplayer') {
+      const messages = JSON.parse(localStorage.getItem('chatMessages') || '[]');
+      setChatMessages(messages);
+      const interval = setInterval(() => {
+        const updated = JSON.parse(localStorage.getItem('chatMessages') || '[]');
+        setChatMessages(updated);
+      }, 2000);
+      return () => clearInterval(interval);
+    }
+  }, [gameState]);
 
   if (gameState === 'auth') {
     return (
@@ -463,18 +508,59 @@ export default function Index() {
                   <Icon name="ArrowLeft" size={18} />
                 </Button>
               </CardTitle>
-              <CardDescription>Найди противника по нику и вызови на дуэль</CardDescription>
+              <CardDescription>Найди противника по нику и общайся в чате</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                <Input placeholder="Введи ник противника..." className="bg-input" />
-                <Button className="w-full bg-secondary hover:bg-secondary/90">
-                  <Icon name="Search" size={18} className="mr-2" />
-                  НАЙТИ ПРОТИВНИКА
-                </Button>
-                <div className="text-center text-muted-foreground text-sm mt-8">
-                  <Icon name="Swords" size={48} className="mx-auto mb-2 text-primary/30" />
-                  <p>Система мультиплеера в разработке</p>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-xs uppercase tracking-wider text-muted-foreground mb-2 block">Поиск игрока</label>
+                    <Input placeholder="Введи ник противника..." className="bg-input" />
+                    <Button className="w-full mt-2 bg-secondary hover:bg-secondary/90">
+                      <Icon name="Search" size={18} className="mr-2" />
+                      НАЙТИ ПРОТИВНИКА
+                    </Button>
+                  </div>
+                  <div className="text-center text-muted-foreground text-sm pt-4 border-t border-border">
+                    <Icon name="Swords" size={40} className="mx-auto mb-2 text-primary/30" />
+                    <p className="text-xs">Поиск матчей в разработке</p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col h-[400px]">
+                  <label className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Общий чат</label>
+                  <div className="flex-1 bg-muted/30 rounded border border-border p-3 overflow-y-auto mb-3 space-y-2">
+                    {chatMessages.length === 0 ? (
+                      <div className="text-center text-muted-foreground text-sm py-8">
+                        <Icon name="MessageSquare" size={32} className="mx-auto mb-2 opacity-30" />
+                        <p>Чат пуст. Напиши первым!</p>
+                      </div>
+                    ) : (
+                      chatMessages.map(msg => (
+                        <div key={msg.id} className="bg-card/50 rounded p-2 text-sm">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-bold text-primary">{msg.user}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(msg.timestamp).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                          <p className="text-foreground">{msg.text}</p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <Input 
+                      placeholder="Напиши сообщение..." 
+                      className="bg-input"
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
+                    />
+                    <Button onClick={sendMessage} size="icon" className="shrink-0">
+                      <Icon name="Send" size={18} />
+                    </Button>
+                  </div>
                 </div>
               </div>
             </CardContent>
