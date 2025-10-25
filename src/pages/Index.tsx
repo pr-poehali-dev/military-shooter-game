@@ -18,6 +18,7 @@ interface User {
   weapons: string[];
   friends: string[];
   avatar?: string;
+  balance: number;
   isAdmin?: boolean;
 }
 
@@ -26,6 +27,15 @@ type GameState = 'auth' | 'menu' | 'game' | 'profile' | 'multiplayer' | 'friends
 const ADMIN_CREDENTIALS = { login: 'plutka', password: 'user' };
 
 const AVATARS = ['🎖️', '⚔️', '🔫', '💣', '🎯', '🚁', '🛡️', '⭐', '💀', '🔥', '⚡', '🎮'];
+
+const SHOP_WEAPONS = [
+  { name: 'AK-47', price: 500, damage: 'Высокий' },
+  { name: 'M4A1', price: 750, damage: 'Средний' },
+  { name: 'AWP', price: 1500, damage: 'Критический' },
+  { name: 'Desert Eagle', price: 400, damage: 'Средний' },
+  { name: 'MP5', price: 600, damage: 'Быстрый' },
+  { name: 'Shotgun', price: 800, damage: 'Мощный' }
+];
 
 const LEVEL_MISSIONS = [
   { level: 1, name: 'Тренировочный полигон', enemies: 5, description: 'Освой базовые навыки стрельбы' },
@@ -58,6 +68,9 @@ export default function Index() {
   const [editingNickname, setEditingNickname] = useState(false);
   const [newNickname, setNewNickname] = useState('');
   const [isMobile, setIsMobile] = useState(false);
+  const [friendSearch, setFriendSearch] = useState('');
+  const [adminUserSearch, setAdminUserSearch] = useState('');
+  const [adminBalanceAmount, setAdminBalanceAmount] = useState('');
   const audioContextRef = useRef<AudioContext | null>(null);
   const { toast } = useToast();
 
@@ -76,6 +89,9 @@ export default function Index() {
       const user = JSON.parse(stored);
       if (!user.avatar) {
         user.avatar = AVATARS[0];
+      }
+      if (user.balance === undefined) {
+        user.balance = 0;
       }
       setCurrentUser(user);
       setGameState('menu');
@@ -157,6 +173,7 @@ export default function Index() {
           weapons: ['AK-47', 'M4A1', 'AWP', 'Desert Eagle'],
           friends: [],
           avatar: '🎖️',
+          balance: 999999,
           isAdmin: true
         };
         setCurrentUser(adminUser);
@@ -189,7 +206,8 @@ export default function Index() {
         level: 1,
         weapons: ['Pistol'],
         friends: [],
-        avatar: AVATARS[0]
+        avatar: AVATARS[0],
+        balance: 0
       };
       setCurrentUser(newUser);
       saveUser(newUser);
@@ -245,12 +263,17 @@ export default function Index() {
       setTimeout(() => {
         playSound('levelup');
         const nextLevel = (currentUser?.level || 1) + 1;
+        const reward = (currentUser?.level || 1) * 100;
         toast({ 
           title: '🏆 Уровень пройден!', 
-          description: `${LEVEL_MISSIONS[(currentUser?.level || 1) - 1].name} зачищен!`
+          description: `${LEVEL_MISSIONS[(currentUser?.level || 1) - 1].name} зачищен! +${reward} монет`
         });
         if (currentUser) {
-          const updatedUser = { ...currentUser, level: Math.min(nextLevel, 10) };
+          const updatedUser = { 
+            ...currentUser, 
+            level: Math.min(nextLevel, 10),
+            balance: (currentUser.balance || 0) + reward
+          };
           setCurrentUser(updatedUser);
           saveUser(updatedUser);
         }
@@ -277,6 +300,113 @@ export default function Index() {
       saveUser(updatedUser);
       toast({ title: '✅ Аватар обновлен!' });
     }
+  };
+
+  const addFriend = () => {
+    if (!friendSearch.trim()) {
+      toast({ title: '⚠️ Введите ник друга', variant: 'destructive' });
+      return;
+    }
+    
+    const users = JSON.parse(localStorage.getItem('users') || '[]');
+    const friend = users.find((u: User) => u.nickname === friendSearch);
+    
+    if (!friend) {
+      toast({ title: '❌ Игрок не найден', variant: 'destructive' });
+      return;
+    }
+    
+    if (friend.nickname === currentUser?.nickname) {
+      toast({ title: '⚠️ Нельзя добавить самого себя', variant: 'destructive' });
+      return;
+    }
+    
+    if (currentUser?.friends.includes(friend.nickname)) {
+      toast({ title: '⚠️ Уже в списке друзей', variant: 'destructive' });
+      return;
+    }
+    
+    if (currentUser) {
+      const updatedUser = { 
+        ...currentUser, 
+        friends: [...currentUser.friends, friend.nickname] 
+      };
+      setCurrentUser(updatedUser);
+      saveUser(updatedUser);
+      setFriendSearch('');
+      toast({ title: `✅ ${friend.nickname} добавлен в друзья!` });
+    }
+  };
+
+  const removeFriend = (friendNick: string) => {
+    if (currentUser) {
+      const updatedUser = { 
+        ...currentUser, 
+        friends: currentUser.friends.filter(f => f !== friendNick) 
+      };
+      setCurrentUser(updatedUser);
+      saveUser(updatedUser);
+      toast({ title: `❌ ${friendNick} удален из друзей` });
+    }
+  };
+
+  const buyWeapon = (weapon: typeof SHOP_WEAPONS[0]) => {
+    if (!currentUser) return;
+    
+    if (currentUser.weapons.includes(weapon.name)) {
+      toast({ title: '⚠️ Оружие уже куплено', variant: 'destructive' });
+      return;
+    }
+    
+    if ((currentUser.balance || 0) < weapon.price) {
+      toast({ title: '💰 Недостаточно монет', variant: 'destructive' });
+      return;
+    }
+    
+    const updatedUser = {
+      ...currentUser,
+      weapons: [...currentUser.weapons, weapon.name],
+      balance: currentUser.balance - weapon.price
+    };
+    setCurrentUser(updatedUser);
+    saveUser(updatedUser);
+    toast({ title: `✅ ${weapon.name} куплен!`, description: `Осталось: ${updatedUser.balance} монет` });
+  };
+
+  const adminGiveBalance = () => {
+    if (!adminUserSearch.trim() || !adminBalanceAmount) {
+      toast({ title: '⚠️ Заполните все поля', variant: 'destructive' });
+      return;
+    }
+    
+    const users = JSON.parse(localStorage.getItem('users') || '[]');
+    const userIndex = users.findIndex((u: User) => u.nickname === adminUserSearch);
+    
+    if (userIndex === -1) {
+      toast({ title: '❌ Игрок не найден', variant: 'destructive' });
+      return;
+    }
+    
+    const amount = parseInt(adminBalanceAmount);
+    if (isNaN(amount)) {
+      toast({ title: '❌ Неверная сумма', variant: 'destructive' });
+      return;
+    }
+    
+    users[userIndex].balance = (users[userIndex].balance || 0) + amount;
+    localStorage.setItem('users', JSON.stringify(users));
+    
+    if (users[userIndex].nickname === currentUser?.nickname) {
+      setCurrentUser(users[userIndex]);
+      localStorage.setItem('currentUser', JSON.stringify(users[userIndex]));
+    }
+    
+    setAdminUserSearch('');
+    setAdminBalanceAmount('');
+    toast({ 
+      title: '✅ Баланс выдан!', 
+      description: `${users[userIndex].nickname}: +${amount} монет` 
+    });
   };
 
   const logout = () => {
@@ -422,6 +552,10 @@ export default function Index() {
                 <Icon name="Target" size={isMobile ? 16 : 20} className="text-accent" />
                 <span className={`font-bold ${isMobile ? 'text-sm' : ''}`}>{kills}</span>
               </div>
+              <div className="flex items-center gap-1 md:gap-2">
+                <Icon name="Coins" size={isMobile ? 16 : 20} className="text-amber-500" />
+                <span className={`font-bold ${isMobile ? 'text-sm' : ''}`}>{currentUser?.balance || 0}</span>
+              </div>
             </div>
             <div className={isMobile ? 'flex justify-between items-center' : ''}>
               <Badge variant="outline" className={`${isMobile ? 'text-xs px-2 py-1' : 'text-lg px-4 py-2'} border-primary text-primary`}>
@@ -517,6 +651,10 @@ export default function Index() {
             <p className={`text-muted-foreground ${isMobile ? 'text-sm' : ''}`}>
               Добро пожаловать, <span className="text-primary font-bold">{currentUser?.nickname}</span>
             </p>
+            <Badge variant="outline" className="ml-2 border-amber-500 text-amber-500">
+              <Icon name="Coins" size={14} className="mr-1" />
+              {currentUser?.balance || 0}
+            </Badge>
           </div>
         </div>
 
@@ -785,19 +923,69 @@ export default function Index() {
               <CardTitle className="flex items-center justify-between">
                 <span className={`flex items-center gap-2 ${isMobile ? 'text-lg' : ''}`}>
                   <Icon name="Heart" size={isMobile ? 20 : 24} />
-                  Друзья
+                  Друзья ({currentUser?.friends.length || 0})
                 </span>
                 <Button variant="outline" size="sm" onClick={() => setGameState('menu')}>
                   <Icon name="ArrowLeft" size={18} />
                 </Button>
               </CardTitle>
+              <CardDescription className={isMobile ? 'text-xs' : ''}>Добавляй союзников по нику</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="text-center text-muted-foreground py-8">
-                <Icon name="UserPlus" size={isMobile ? 40 : 48} className="mx-auto mb-2 text-primary/30" />
-                <p className={isMobile ? 'text-sm' : ''}>У тебя пока нет союзников</p>
-                <p className={`mt-2 ${isMobile ? 'text-xs' : 'text-sm'}`}>Добавляй друзей через мультиплеер</p>
+            <CardContent className="space-y-4">
+              <div className="flex gap-2">
+                <Input 
+                  placeholder="Введи ник друга..." 
+                  value={friendSearch}
+                  onChange={(e) => setFriendSearch(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && addFriend()}
+                  className={`bg-input ${isMobile ? 'text-sm' : ''}`}
+                />
+                <Button onClick={addFriend} className="shrink-0">
+                  <Icon name="UserPlus" size={18} className="mr-2" />
+                  Добавить
+                </Button>
               </div>
+
+              {currentUser?.friends && currentUser.friends.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider">Список друзей</p>
+                  {currentUser.friends.map((friend, idx) => {
+                    const users = JSON.parse(localStorage.getItem('users') || '[]');
+                    const friendData = users.find((u: User) => u.nickname === friend);
+                    return (
+                      <div key={idx} className="bg-muted/50 p-3 rounded border border-border flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <Avatar className={isMobile ? 'w-8 h-8' : 'w-10 h-10'}>
+                            <AvatarFallback className="bg-primary text-primary-foreground">
+                              {friendData?.avatar || '🎖️'}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className={`font-bold ${isMobile ? 'text-sm' : ''}`}>{friend}</p>
+                            <p className={`text-xs text-muted-foreground`}>
+                              Уровень {friendData?.level || 1}
+                            </p>
+                          </div>
+                        </div>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => removeFriend(friend)}
+                          className="text-destructive hover:text-destructive"
+                        >
+                          <Icon name="UserMinus" size={18} />
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center text-muted-foreground py-8">
+                  <Icon name="UserPlus" size={isMobile ? 40 : 48} className="mx-auto mb-2 text-primary/30" />
+                  <p className={isMobile ? 'text-sm' : ''}>У тебя пока нет союзников</p>
+                  <p className={`mt-2 ${isMobile ? 'text-xs' : 'text-sm'}`}>Введи ник друга выше</p>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -814,26 +1002,63 @@ export default function Index() {
                   <Icon name="ArrowLeft" size={18} />
                 </Button>
               </CardTitle>
-              <CardDescription className={isMobile ? 'text-xs' : ''}>Покупай оружие за очки опыта</CardDescription>
+              <CardDescription className={isMobile ? 'text-xs' : ''}>
+                Твой баланс: {currentUser?.balance || 0} монет
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className={`grid ${isMobile ? 'grid-cols-1' : 'md:grid-cols-2'} gap-4`}>
-                {['AK-47', 'M4A1', 'AWP', 'Desert Eagle', 'MP5', 'Shotgun'].map((weapon, idx) => (
-                  <div key={idx} className={`bg-muted/50 p-4 rounded border border-border hover:border-primary/50 transition-colors ${isMobile ? 'p-3' : ''}`}>
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <Icon name="Crosshair" size={20} className="text-secondary" />
-                        <span className={`font-bold font-mono ${isMobile ? 'text-sm' : ''}`}>{weapon}</span>
+                {SHOP_WEAPONS.map((weapon, idx) => {
+                  const owned = currentUser?.weapons.includes(weapon.name);
+                  const canBuy = (currentUser?.balance || 0) >= weapon.price;
+                  
+                  return (
+                    <div key={idx} className={`bg-muted/50 p-4 rounded border ${owned ? 'border-accent' : 'border-border hover:border-primary/50'} transition-colors ${isMobile ? 'p-3' : ''}`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <Icon name="Crosshair" size={20} className="text-secondary" />
+                          <div>
+                            <p className={`font-bold font-mono ${isMobile ? 'text-sm' : ''}`}>{weapon.name}</p>
+                            <p className="text-xs text-muted-foreground">{weapon.damage}</p>
+                          </div>
+                        </div>
+                        <Badge variant="outline" className={`border-amber-500 text-amber-500 ${isMobile ? 'text-xs' : ''}`}>
+                          <Icon name="Coins" size={12} className="mr-1" />
+                          {weapon.price}
+                        </Badge>
                       </div>
-                      <Badge variant="outline" className={`border-accent text-accent ${isMobile ? 'text-xs' : ''}`}>
-                        {(idx + 1) * 500} XP
-                      </Badge>
+                      {owned ? (
+                        <Button size="sm" className={`w-full ${isMobile ? 'text-xs' : ''}`} variant="outline" disabled>
+                          <Icon name="Check" size={16} className="mr-2" />
+                          КУПЛЕНО
+                        </Button>
+                      ) : (
+                        <Button 
+                          size="sm" 
+                          className={`w-full ${isMobile ? 'text-xs' : ''}`} 
+                          variant="secondary"
+                          disabled={!canBuy}
+                          onClick={() => buyWeapon(weapon)}
+                        >
+                          <Icon name="ShoppingBag" size={16} className="mr-2" />
+                          {canBuy ? 'КУПИТЬ' : 'НЕ ХВАТАЕТ МОНЕТ'}
+                        </Button>
+                      )}
                     </div>
-                    <Button size="sm" className={`w-full ${isMobile ? 'text-xs' : ''}`} variant="secondary">
-                      КУПИТЬ
-                    </Button>
+                  );
+                })}
+              </div>
+              
+              <div className="mt-6 p-4 bg-accent/10 border border-accent/30 rounded">
+                <div className="flex items-start gap-2">
+                  <Icon name="Info" size={20} className="text-accent mt-0.5" />
+                  <div>
+                    <p className={`font-bold text-accent ${isMobile ? 'text-sm' : ''}`}>Как заработать монеты?</p>
+                    <p className={`text-muted-foreground mt-1 ${isMobile ? 'text-xs' : 'text-sm'}`}>
+                      Проходи уровни и получай награды! Каждый уровень дает монеты = уровень × 100
+                    </p>
                   </div>
-                ))}
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -854,6 +1079,35 @@ export default function Index() {
               <CardDescription className={isMobile ? 'text-xs' : ''}>Управление игрой и игроками</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="bg-primary/10 border border-primary/30 rounded p-4">
+                <p className={`font-bold text-primary mb-3 ${isMobile ? 'text-sm' : ''}`}>Выдача баланса игроку</p>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs uppercase tracking-wider text-muted-foreground mb-2 block">Ник игрока</label>
+                    <Input 
+                      placeholder="Введи ник игрока" 
+                      value={adminUserSearch}
+                      onChange={(e) => setAdminUserSearch(e.target.value)}
+                      className={`bg-input ${isMobile ? 'text-sm' : ''}`}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase tracking-wider text-muted-foreground mb-2 block">Количество монет</label>
+                    <Input 
+                      type="number"
+                      placeholder="1000" 
+                      value={adminBalanceAmount}
+                      onChange={(e) => setAdminBalanceAmount(e.target.value)}
+                      className={`bg-input ${isMobile ? 'text-sm' : ''}`}
+                    />
+                  </div>
+                  <Button onClick={adminGiveBalance} className="w-full bg-accent hover:bg-accent/90">
+                    <Icon name="Coins" size={18} className="mr-2" />
+                    ВЫДАТЬ БАЛАНС
+                  </Button>
+                </div>
+              </div>
+
               <div className={`grid ${isMobile ? 'grid-cols-1' : 'md:grid-cols-2'} gap-4`}>
                 <Button variant="outline" className={`justify-start h-auto ${isMobile ? 'p-3' : 'p-4'}`}>
                   <div className="text-left">
